@@ -34,7 +34,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: build
-          key: ${{ runner.os }}-tgbotapi-static-${{ hashFiles('CMakeLists.txt', 'telegram-bot-api/**', 'td/CMakeLists.txt') }}
+          key: ${{ runner.os }}-tgbotapi-static-${{ hashFiles('**/*.cpp', '**/*.h', '**/CMakeLists.txt') }}
           restore-keys: |
             ${{ runner.os }}-tgbotapi-static-
 
@@ -44,12 +44,15 @@ jobs:
           mkdir -p build dist
 
           # Run compilation in Alpine container for fully static linking against musl-libc
+          # We mount the workspace to the same path inside the container to preserve absolute paths in CMakeCache
           docker run --rm \
-            -v ${{ github.workspace }}:/src \
-            -w /src \
+            -v ${{ github.workspace }}:${{ github.workspace }} \
+            -w ${{ github.workspace }} \
             alpine:3.20 \
             sh -c '
-              apk update &&
+              set -e
+
+              apk update
               apk add --no-cache \
                 alpine-sdk \
                 linux-headers \
@@ -67,17 +70,17 @@ jobs:
                     -DCMAKE_EXE_LINKER_FLAGS="-static" \
                     -DCMAKE_FIND_LIBRARY_SUFFIXES=".a" \
                     -DBUILD_SHARED_LIBS=OFF \
-                    -DCMAKE_INSTALL_PREFIX:PATH=/src/dist \
+                    -DCMAKE_INSTALL_PREFIX:PATH=${{ github.workspace }}/dist \
                     ..
 
               # Build and Install
               cmake --build . --target install -j$(nproc)
 
               # Strip debugging symbols from the final binary
-              strip /src/dist/bin/telegram-bot-api
+              strip ${{ github.workspace }}/dist/bin/telegram-bot-api
 
               # Fix permissions so that host can access/cache/clean up these directories
-              chown -R "$(stat -c "%u:%g" /src)" /src/build /src/dist
+              chown -R "$(stat -c "%u:%g" ${{ github.workspace }})" ${{ github.workspace }}/build ${{ github.workspace }}/dist
             '
 
       - name: Verify Binary
